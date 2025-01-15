@@ -1,57 +1,58 @@
-var express = require('express');
-var app = express();
-var bodyParser = require('body-parser');
-var cors = require('cors');
-const dbConn = require('./config/db.config');
-// for parsing application/json
-app.use(bodyParser.json());
+const express = require('express');
+const bodyParser = require('body-parser');
+const cors = require('cors');
+const connectDB = require('./config/db.config'); // Importer la fonction connect
 
-// for parsing application/xwww-
+const app = express();
+
+// Middleware
+app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(cors());
 
+// Connexion à la base de données
+let dbConn;
+connectDB().then(db => {
+    dbConn = db; // dbConn est maintenant un objet de base de données valide
+    console.log("Database connection established.");
+}).catch(err => {
+    console.error("Failed to connect to the database:", err);
+    process.exit(1);
+});
+
+// Routes
 app.get('/', function (req, res) {
     res.send("Hello world!");
 });
 
-//GET
-app.get('/questions/:type', (req, res) => {
-    dbConn.getConnection(function (err, conn) {
-        if (err) throw err;
-        conn.query("SELECT * FROM questions WHERE type = ?", [req.params.type], function (err, result, fields) {
-            if (!err)
-                res.send(result);
-            else
-                console.log(err);
-        });
-
-        //release the connection when finished!
-        dbConn.releaseConnection(conn);
-    });
-
+// GET Questions
+app.get('/questions/:type', async (req, res) => {
+    try {
+        const questions = await dbConn.collection('Quiz').find({ type: req.params.type }).toArray();
+        res.send(questions);
+    } catch (err) {
+        console.error(err);
+        res.status(500).send("Database error");
+    }
 });
 
-app.post('/saveAnswers', (req, res) => {
-    dbConn.getConnection(function (err, conn) {
-        if (err) throw err;
-        console.log(req.body);
-        let sql = "INSERT INTO user_answers (name, email, question, answer) VALUES ?";
-        let values = [];
+// POST Save Answers
+app.post('/saveAnswers', async (req, res) => {
+    try {
+        const userAnswersCollection = dbConn.collection('User');
+        const userData = req.body;
 
-        let userData = req.body;
-        if(userData){
-            for (let i = 0; i < userData.question.length; i++) {
-                values[i] = [userData.name, userData.email, userData.question[i], userData.answers[i]];
-            }
-        }
-        conn.query(sql, [values], (err, result, fields) => {
-            if (!err)
-                res.send(values);
-            else
-                console.log(err);
-        });
-    });
+        // Insérer les réponses de l'utilisateur
+        await userAnswersCollection.insertOne(userData);
+        res.send("Answers saved successfully.");
+    } catch (err) {
+        console.error(err);
+        res.status(500).send("Database error");
+    }
 });
 
-
-app.listen(3000);
+// Démarrer le serveur
+const PORT = 3000;
+app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+});
